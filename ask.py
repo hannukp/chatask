@@ -3,29 +3,24 @@ import json
 import os
 import sys
 import urllib.request
-from typing import Any
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 
 def send_post_request(url: str, data: dict) -> str:
-    json_data = json.dumps(data).encode('utf-8')
+    json_data = json.dumps(data).encode("utf-8")
     req = urllib.request.Request(url, json_data)
-    req.add_header('Content-Type', 'application/json')
+    req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {OPENAI_API_KEY}")
     response = urllib.request.urlopen(req)
-    return response.read().decode('utf-8')
-
-
-def format_response(resp):
-    return json.loads(resp)["choices"][0]["message"]["content"]
+    return response.read().decode("utf-8")
 
 
 def query_chatgpt(messages):
-    return format_response(send_post_request("https://api.openai.com/v1/chat/completions", {
-        "model": "gpt-3.5-turbo",
-        "messages": messages
-    }))
+    resp = send_post_request(
+        "https://api.openai.com/v1/chat/completions", {"model": "gpt-3.5-turbo", "messages": messages}
+    )
+    return json.loads(resp)["choices"][0]["message"]["content"]
 
 
 class ChatAsk:
@@ -35,52 +30,75 @@ class ChatAsk:
     def ask(self, query: str):
         self.messages.append({"role": "user", "content": query})
         answer = query_chatgpt(self.messages)
+        # answer = "Hello!"
         self.messages.append({"role": "assistant", "content": answer})
         return answer
 
 
-templates = {
-    "test": "Write a unit test for the following code:\n\n*BODY*"
+TEMPLATES = {
+    "test": "Write a unit test for the following code:\n\n*BODY*",
+    "doc": "Write documentation for the following code:\n\n*BODY*",
+    "explain": "What does the following code do:\n\n*BODY*",
 }
 
-if len(sys.argv) < 2 or '-h' in sys.argv or '--help' in sys.argv:
+
+def help_and_exit():
     print("No questions?")
+    print()
+    print("Example usage:")
+    print("    ask what is the meaning of life")
+    print("    ask test 'const adder = (a: number, b: number) => a + b'")
+    print("    ask explain 'const adder = (a: number, b: number) => a + b'")
+    print("    ask test <example.py")
+    print("    ask convert to typescript <example.py")
+    print()
     print("Available templates:")
-    for cmd, expansion in sorted(templates.items()):
-        print('  ', cmd.ljust(10), repr(expansion))
+    for cmd, expansion in sorted(TEMPLATES.items()):
+        print(f"    {cmd:<10} {expansion!r}")
     sys.exit(1)
 
-# first parameter may be a template invocation
-template = templates.get(sys.argv[1])
-if template:
-    args = sys.argv[2:]
-else:
-    args = sys.argv[1:]
 
-q = ' '.join(args).strip()
-if not q:
-    print("No questions?")
-    sys.exit(1)
-if len(q) > 1000:
-    print("Too long questions")
-    sys.exit(1)
+def main():
+    if len(sys.argv) < 2 or "-h" in sys.argv or "--help" in sys.argv:
+        help_and_exit()
 
-if template:
-    q = template.replace('*BODY*', q)
+    # ignore args that look like switches
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
 
+    # first parameter may be a template invocation
+    template = TEMPLATES.get(args[0])
+    if template:
+        args = args[1:]
 
-print('>>>', q)
-chatask = ChatAsk()
-print()
-print(chatask.ask(q))
-while True:
+    q = " ".join(args).strip()
+    if not sys.stdin.isatty():
+        q += "\n\n" + sys.stdin.read()
+
+    if not q:
+        help_and_exit()
+    if len(q) > 2000:
+        print(f"Too long question ({len(q)})")
+        sys.exit(1)
+
+    if template:
+        q = template.replace("*BODY*", q)
+
+    chatask = ChatAsk()
+    print(">>>", q)
     print()
-    try:
-        text = input('>>> ')
-    except EOFError:
-        break
-    text = text.strip()
-    if not text:
-        break
+    print(chatask.ask(q))
     print()
-    print(chatask.ask(text))
+    while True:
+        try:
+            q = input(">>> ")
+        except EOFError:
+            break
+        q = q.strip()
+        if not q:
+            break
+        print()
+        print(chatask.ask(q))
+        print()
+
+
+main()
