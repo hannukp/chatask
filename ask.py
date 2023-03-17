@@ -104,7 +104,10 @@ def main():
     if template:
         q = template.replace("*BODY*", q)
 
-    chatask = ChatAsk(temperature=temperature)
+    # This context seems to help with answers that start with 'As an AI language model...':
+    context = "You are a helpful assistant."
+
+    chatask = ChatAsk(temperature=temperature, context=context)
     print(">>>", q)
     print('-' * 79)
     print(chatask.ask(q))
