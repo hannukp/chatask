@@ -44,10 +44,11 @@ TEMPLATES = {
 }
 
 configfile = os.path.expanduser("~/.ask")
+config = {}
 if os.path.exists(configfile):
     with open(configfile, "rb") as f:
         config = json.load(f)
-    TEMPLATES.update(config["templates"])
+    TEMPLATES.update(config.get("templates", {}))
 
 
 def help_and_exit():
@@ -73,7 +74,7 @@ def main():
     if len(sys.argv) < 2 or "-h" in sys.argv or "--help" in sys.argv:
         help_and_exit()
 
-    temperature = 1
+    temperature = config.get("temperature", 0.7)
     default_temperature = True
     for a in sys.argv[1:]:
         if a.startswith('-t'):
