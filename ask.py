@@ -43,6 +43,12 @@ TEMPLATES = {
     "explain": "What does the following code do:\n\n*BODY*",
 }
 
+configfile = os.path.expanduser("~/.ask")
+if os.path.exists(configfile):
+    with open(configfile, "rb") as f:
+        config = json.load(f)
+    TEMPLATES.update(config["templates"])
+
 
 def help_and_exit():
     print("No questions?")
