@@ -16,22 +16,23 @@ def send_post_request(url: str, data: dict) -> str:
     return response.read().decode("utf-8")
 
 
-def query_chatgpt(messages, temperature):
+def query_chatgpt(messages, temperature: float, model: str):
     resp = send_post_request(
         "https://api.openai.com/v1/chat/completions",
-        {"model": "gpt-3.5-turbo", "messages": messages, "temperature": temperature}
+        {"model": model, "messages": messages, "temperature": temperature}
     )
     return json.loads(resp)["choices"][0]["message"]["content"]
 
 
 class ChatAsk:
-    def __init__(self, context=None, temperature=1):
+    def __init__(self, context: str, temperature: float, model: str):
         self.temperature = temperature
         self.messages = [{"role": "system", "content": context}] if context else []
+        self.model = model
 
     def ask(self, query: str):
         self.messages.append({"role": "user", "content": query})
-        answer = query_chatgpt(self.messages, self.temperature)
+        answer = query_chatgpt(messages=self.messages, temperature=self.temperature, model=self.model)
         # answer = "Hello!"
         self.messages.append({"role": "assistant", "content": answer})
         return answer
@@ -56,6 +57,7 @@ def help_and_exit():
     print()
     print("Switches:")
     print("    -t0.1  -- set temperature to 0.1 (valid range 0-2)")
+    print("    -4     -- use gpt-4 model")
     print()
     print("Example usage:")
     print("    ask what is the meaning of life")
@@ -76,10 +78,13 @@ def main():
 
     temperature = config.get("temperature", 0.7)
     default_temperature = True
+    model = config.get("model", "gpt-3.5-turbo")
     for a in sys.argv[1:]:
         if a.startswith('-t'):
             temperature = float(a[2:])
             default_temperature = False
+        if a == '-4':
+            model = 'gpt-4'
 
     # ignore args that look like switches
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -108,7 +113,7 @@ def main():
     # This context seems to help with answers that start with 'As an AI language model...':
     context = "You are a helpful assistant."
 
-    chatask = ChatAsk(temperature=temperature, context=context)
+    chatask = ChatAsk(temperature=temperature, context=context, model=model)
     print(">>>", q)
     print('-' * 79)
     print(chatask.ask(q))
