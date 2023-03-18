@@ -2,6 +2,8 @@
 import json
 import os
 import sys
+import tempfile
+import time
 import urllib.request
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
@@ -16,23 +18,52 @@ def send_post_request(url: str, data: dict) -> str:
     return response.read().decode("utf-8")
 
 
-def query_chatgpt(messages, temperature: float, model: str):
+def write_log(logfile, content):
+    with open(logfile, 'a') as f:
+        json.dump(content, f)
+        f.write('\n')
+
+
+def query_chatgpt(messages, temperature: float, model: str, logfile: str):
+    request_data = {"model": model, "messages": messages, "temperature": temperature}
+    url = "https://api.openai.com/v1/chat/completions"
+    start_time = time.time()
+    write_log(logfile, {
+        "time": start_time,
+        "type": "request",
+        "url": url,
+        "data": request_data,
+    })
     resp = send_post_request(
-        "https://api.openai.com/v1/chat/completions",
-        {"model": model, "messages": messages, "temperature": temperature}
+        url,
+        request_data
     )
-    return json.loads(resp)["choices"][0]["message"]["content"]
+    resp_data = json.loads(resp)
+    end_time = time.time()
+    write_log(logfile, {
+        "time": end_time,
+        "seconds": end_time - start_time,
+        "type": "response",
+        "data": resp_data,
+    })
+    return resp_data["choices"][0]["message"]["content"]
 
 
 class ChatAsk:
-    def __init__(self, context: str, temperature: float, model: str):
+    def __init__(self, context: str, temperature: float, model: str, logfile: str):
         self.temperature = temperature
         self.messages = [{"role": "system", "content": context}] if context else []
         self.model = model
+        self.logfile = logfile
 
     def ask(self, query: str):
         self.messages.append({"role": "user", "content": query})
-        answer = query_chatgpt(messages=self.messages, temperature=self.temperature, model=self.model)
+        answer = query_chatgpt(
+            messages=self.messages,
+            temperature=self.temperature,
+            model=self.model,
+            logfile=self.logfile,
+        )
         # answer = "Hello!"
         self.messages.append({"role": "assistant", "content": answer})
         return answer
@@ -41,7 +72,7 @@ class ChatAsk:
 TEMPLATES = {
     "test": "Write a unit test for the following code:\n\n*BODY*",
     "doc": "Write documentation for the following code:\n\n*BODY*",
-    "explain": "What does the following code do:\n\n*BODY*",
+    "explaincode": "What does the following code do:\n\n*BODY*",
 }
 
 configfile = os.path.expanduser("~/.ask")
@@ -62,7 +93,7 @@ def help_and_exit():
     print("Example usage:")
     print("    ask what is the meaning of life")
     print("    ask test 'const adder = (a: number, b: number) => a + b'")
-    print("    ask explain 'const adder = (a: number, b: number) => a + b'")
+    print("    ask explaincode 'const adder = (a: number, b: number) => a + b'")
     print("    ask test <example.py")
     print("    ask -t0 convert to typescript <example.py")
     print()
@@ -77,6 +108,7 @@ def main():
         help_and_exit()
 
     temperature = config.get("temperature", 0.7)
+    logfile = config.get("logfile", os.path.join(tempfile.gettempdir(), 'ask.log'))
     default_temperature = True
     model = config.get("model", "gpt-3.5-turbo")
     for a in sys.argv[1:]:
@@ -113,7 +145,7 @@ def main():
     # This context seems to help with answers that start with 'As an AI language model...':
     context = "You are a helpful assistant."
 
-    chatask = ChatAsk(temperature=temperature, context=context, model=model)
+    chatask = ChatAsk(temperature=temperature, context=context, model=model, logfile=logfile)
     print(">>>", q)
     print('-' * 79)
     print(chatask.ask(q))
