@@ -76,11 +76,16 @@ TEMPLATES = {
 }
 
 configfile = os.path.expanduser("~/.ask")
-config = {}
+config = {
+    "temperature": 0.7,
+    "model": "gpt-3.5-turbo",
+    "logfile": os.path.join(tempfile.gettempdir(), 'ask.log'),
+    "templates": {}
+}
 if os.path.exists(configfile):
     with open(configfile, "rb") as f:
-        config = json.load(f)
-    TEMPLATES.update(config.get("templates", {}))
+        config.update(json.load(f))
+    TEMPLATES.update(config["templates"])
 
 
 def help_and_exit():
@@ -100,6 +105,9 @@ def help_and_exit():
     print("Available templates:")
     for cmd, expansion in sorted(TEMPLATES.items()):
         print(f"    {cmd:<10} {expansion!r}")
+    print()
+    print("Config:")
+    print(json.dumps(config, indent=2))
     sys.exit(1)
 
 
@@ -107,10 +115,10 @@ def main():
     if len(sys.argv) < 2 or "-h" in sys.argv or "--help" in sys.argv:
         help_and_exit()
 
-    temperature = config.get("temperature", 0.7)
-    logfile = config.get("logfile", os.path.join(tempfile.gettempdir(), 'ask.log'))
+    temperature = config["temperature"]
+    model = config["model"]
+    logfile = config["logfile"]
     default_temperature = True
-    model = config.get("model", "gpt-3.5-turbo")
     for a in sys.argv[1:]:
         if a.startswith('-t'):
             temperature = float(a[2:])
