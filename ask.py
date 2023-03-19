@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import platform
 import sys
 import tempfile
 import time
@@ -140,6 +141,8 @@ def main():
     q = " ".join(args).strip()
     if not sys.stdin.isatty():
         q += "\n\n" + sys.stdin.read()
+        if platform.system() != 'Windows':
+            sys.stdin = open('/dev/tty', 'r')
 
     if not q:
         help_and_exit()
