@@ -25,6 +25,25 @@ def write_log(logfile, content):
         f.write('\n')
 
 
+def estimate_cost(data):
+    usage = data.get("usage")
+    if not usage:
+        return None
+    model = data.get("model")
+    if model.startswith("gpt-3.5"):
+        prompt_cost = completion_cost = 0.002
+    elif model.startswith("gpt-4"):
+        prompt_cost = 0.03
+        completion_cost = 0.06
+    else:
+        return None
+    prompt_tokens = usage.get("prompt_tokens")
+    completion_tokens = usage.get("completion_tokens")
+    if prompt_tokens is None or completion_tokens is None:
+        return None
+    return (prompt_tokens * prompt_cost + completion_tokens * completion_cost) / 1e3
+
+
 def query_chatgpt(messages, temperature: float, model: str, logfile: str):
     request_data = {"model": model, "messages": messages, "temperature": temperature}
     url = "https://api.openai.com/v1/chat/completions"
@@ -44,6 +63,7 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str):
     write_log(logfile, {
         "time": end_time,
         "seconds": end_time - start_time,
+        "cost": estimate_cost(resp_data),
         "type": "response",
         "data": resp_data,
     })
@@ -146,7 +166,7 @@ def main():
 
     if not q:
         help_and_exit()
-    if len(q) > 2000:
+    if len(q) > 16000:
         print(f"Too long question ({len(q)})")
         sys.exit(1)
 
