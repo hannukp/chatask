@@ -118,6 +118,7 @@ def help_and_exit():
     print()
     print("Example usage:")
     print("    ask what is the meaning of life")
+    print("    ask -4 what is the meaning of life")
     print("    ask test 'const adder = (a: number, b: number) => a + b'")
     print("    ask explaincode 'const adder = (a: number, b: number) => a + b'")
     print("    ask test <example.py")
