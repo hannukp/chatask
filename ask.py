@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import io
 import json
 import os
 import platform
@@ -10,13 +11,54 @@ import urllib.request
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 
-def send_post_request(url: str, data: dict) -> str:
+def send_post_request(url: str, data: dict):
+    """Make a HTTP POST request to OpenAI API"""
     json_data = json.dumps(data).encode("utf-8")
     req = urllib.request.Request(url, json_data)
     req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {OPENAI_API_KEY}")
-    response = urllib.request.urlopen(req)
-    return response.read().decode("utf-8")
+    return urllib.request.urlopen(req)
+
+
+def receive_full_json(response):
+    """Receive full response body and parse as JSON."""
+    return json.loads(response.read().decode("utf-8"))
+
+
+def receive_streaming(response):
+    """Generator that receives server-sent events and yields contents as they arrive."""
+    buffer = io.BytesIO()
+    running = True
+    message_separator = b'\n\n'
+    while not response.closed and running:
+        chunk = response.read(256)
+        if not chunk:
+            # no more data, stop
+            break
+        buffer.write(chunk)
+        # double line break = one message
+        if message_separator in chunk:
+            received = buffer.getvalue()
+            # find where last full message ends in the buffer
+            message_stop = received.rfind(message_separator)
+            messages = received[:message_stop]
+            for message in messages.split(message_separator):
+                if message.startswith(b'data:'):
+                    message = message[5:].strip()
+                    if message == b' [DONE]' or message == b'[DONE]':
+                        running = False
+                        break
+                    part = json.loads(message)
+                    content = part['choices'][0]['delta'].get('content')
+                    if content is not None:
+                        yield content
+                    if part['choices'][0]['finish_reason'] == 'stop':
+                        running = False
+                        break
+            # replace buffer with what was remaining of the old buffer:
+            remaining = received[message_stop + 2:]
+            buffer = io.BytesIO(remaining)
+            buffer.seek(len(remaining))
 
 
 def write_log(logfile, content):
@@ -44,8 +86,8 @@ def estimate_cost(data):
     return (prompt_tokens * prompt_cost + completion_tokens * completion_cost) / 1e3
 
 
-def query_chatgpt(messages, temperature: float, model: str, logfile: str):
-    request_data = {"model": model, "messages": messages, "temperature": temperature}
+def query_chatgpt(messages, temperature: float, model: str, logfile: str, streaming=True):
+    request_data = {"model": model, "messages": messages, "temperature": temperature, "stream": streaming}
     url = "https://api.openai.com/v1/chat/completions"
     start_time = time.time()
     write_log(logfile, {
@@ -58,24 +100,40 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str):
         url,
         request_data
     )
-    resp_data = json.loads(resp)
+
+    if streaming:
+        resp_data = {}
+        content_buffer = io.StringIO()
+        for c in receive_streaming(resp):
+            print(c, end='', flush=True)
+            content_buffer.write(c)
+        content = content_buffer.getvalue()
+        # It seems that the streaming endpoint doesn't respond with token counts
+        cost = 0
+    else:
+        resp_data = receive_full_json(resp)
+        cost = estimate_cost(resp_data)
+        content = resp_data["choices"][0]["message"]["content"]
+
     end_time = time.time()
+    time_taken = end_time - start_time
     write_log(logfile, {
         "time": end_time,
-        "seconds": end_time - start_time,
-        "cost": estimate_cost(resp_data),
+        "seconds": time_taken,
+        "cost": cost,
         "type": "response",
         "data": resp_data,
     })
-    return resp_data["choices"][0]["message"]["content"]
+    return content
 
 
 class ChatAsk:
-    def __init__(self, context: str, temperature: float, model: str, logfile: str):
+    def __init__(self, context: str, temperature: float, model: str, logfile: str, streaming: bool):
         self.temperature = temperature
         self.messages = [{"role": "system", "content": context}] if context else []
         self.model = model
         self.logfile = logfile
+        self.streaming = streaming
 
     def ask(self, query: str):
         self.messages.append({"role": "user", "content": query})
@@ -84,7 +142,10 @@ class ChatAsk:
             temperature=self.temperature,
             model=self.model,
             logfile=self.logfile,
+            streaming=self.streaming,
         )
+        if not self.streaming:
+            print(answer)
         # answer = "Hello!"
         self.messages.append({"role": "assistant", "content": answer})
         return answer
@@ -100,6 +161,7 @@ configfile = os.path.expanduser("~/.ask")
 config = {
     "temperature": 0.7,
     "model": "gpt-3.5-turbo",
+    "streaming": True,
     "logfile": os.path.join(tempfile.gettempdir(), 'ask.log'),
     "templates": {}
 }
@@ -140,13 +202,16 @@ def main():
     temperature = config["temperature"]
     model = config["model"]
     logfile = config["logfile"]
+    streaming = config["streaming"]
     default_temperature = True
     for a in sys.argv[1:]:
         if a.startswith('-t'):
             temperature = float(a[2:])
             default_temperature = False
-        if a == '-4':
+        elif a == '-4':
             model = 'gpt-4'
+        elif a == '-s':
+            streaming = True
 
     # ignore args that look like switches
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -177,10 +242,10 @@ def main():
     # This context seems to help with answers that start with 'As an AI language model...':
     context = "You are a helpful assistant."
 
-    chatask = ChatAsk(temperature=temperature, context=context, model=model, logfile=logfile)
+    chatask = ChatAsk(temperature=temperature, context=context, model=model, logfile=logfile, streaming=streaming)
     print(">>>", q)
     print('-' * 79)
-    print(chatask.ask(q))
+    chatask.ask(q)
     print()
     while True:
         try:
@@ -191,7 +256,7 @@ def main():
         if not q:
             break
         print()
-        print(chatask.ask(q))
+        chatask.ask(q)
         print()
 
 
