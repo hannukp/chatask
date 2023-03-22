@@ -129,6 +129,24 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str, stream
     return content
 
 
+def query_dall_e(prompt: str, logfile: str) -> bytes:
+    request_data = {"prompt": prompt, "n": 1, "size": "512x512"}
+    start_time = time.time()
+    url = "https://api.openai.com/v1/images/generations"
+    write_log(logfile, {
+        "time": start_time,
+        "type": "request",
+        "url": url,
+        "data": request_data,
+    })
+    resp = send_post_request(
+        url,
+        request_data
+    )
+    image_url = receive_full_json(resp)["data"][0]["url"]
+    return urllib.request.urlopen(image_url).read()
+
+
 class ChatAsk:
     def __init__(self, context: str, temperature: float, model: str, logfile: str, streaming: bool):
         self.context = context
@@ -152,13 +170,17 @@ class ChatAsk:
             )
             if not self.streaming:
                 print(answer)
+        except KeyboardInterrupt:
+            print()
+            print("Interrupted query... You can retry with -r")
+            answer = ""
         except urllib.error.HTTPError as e:
             print(f"Query failed with code={e.code}, reason={e.reason}")
             answer = ""
         # answer = "Hello!"
         self.messages.append({"role": "assistant", "content": answer})
 
-    def askagain(self):
+    def ask_again(self):
         while len(self.messages) and self.messages[-1]["role"] == "assistant":
             self.messages.pop()
         self.ask(self.messages.pop()["content"])
@@ -217,6 +239,7 @@ def main():
     logfile = config["logfile"]
     streaming = config["streaming"]
     default_temperature = True
+    image = False
     for a in sys.argv[1:]:
         if a.startswith('-t'):
             temperature = float(a[2:])
@@ -225,6 +248,8 @@ def main():
             model = 'gpt-4'
         elif a == '-s':
             streaming = True
+        elif a == '-i':
+            image = True
 
     # ignore args that look like switches
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -246,11 +271,19 @@ def main():
     if not q:
         help_and_exit()
     if len(q) > 16000:
-        print(f"Too long question ({len(q)})")
+        print(f"Too long question ({len(q)})", file=sys.stderr)
         sys.exit(1)
 
     if template:
         q = template.replace("*BODY*", q)
+
+    if image:
+        if sys.stdout.isatty():
+            print("The output is an PNG file; You must pipe it to a file or another process", file=sys.stderr)
+            sys.exit(1)
+        image_bytes = query_dall_e(prompt=q, logfile=logfile)
+        sys.stdout.buffer.write(image_bytes)
+        return
 
     # This context seems to help with answers that start with 'As an AI language model...':
     context = "You are a helpful assistant."
@@ -270,7 +303,7 @@ def main():
             break
         print()
         if q == '-r':
-            chatask.askagain()
+            chatask.ask_again()
         elif q.startswith('-'):
             print('Use -r to repeat your previous query')
         else:
