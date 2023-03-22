@@ -28,7 +28,7 @@ Usage:
     # use temperature=0 for coding tasks
     ask -t0 convert to typescript <example.py
 
-Note that currently your full chat history is fed back to ChatGPT so long chats become slower and more expensive.
+During an interactive session, up to two of your previous prompts and ChatGPT answers are sent as context.
 
 ## Alternatives
 
