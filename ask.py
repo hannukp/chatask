@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import urllib.error
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
@@ -96,6 +97,7 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str, stream
         "url": url,
         "data": request_data,
     })
+
     resp = send_post_request(
         url,
         request_data
@@ -129,26 +131,37 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str, stream
 
 class ChatAsk:
     def __init__(self, context: str, temperature: float, model: str, logfile: str, streaming: bool):
+        self.context = context
         self.temperature = temperature
         self.messages = [{"role": "system", "content": context}] if context else []
         self.model = model
         self.logfile = logfile
         self.streaming = streaming
+        self.history_length = 5
 
     def ask(self, query: str):
         self.messages.append({"role": "user", "content": query})
-        answer = query_chatgpt(
-            messages=self.messages,
-            temperature=self.temperature,
-            model=self.model,
-            logfile=self.logfile,
-            streaming=self.streaming,
-        )
-        if not self.streaming:
-            print(answer)
+        context_messages = [{"role": "system", "content": self.context}] if self.context else []
+        try:
+            answer = query_chatgpt(
+                messages=context_messages + self.messages[-self.history_length:],
+                temperature=self.temperature,
+                model=self.model,
+                logfile=self.logfile,
+                streaming=self.streaming,
+            )
+            if not self.streaming:
+                print(answer)
+        except urllib.error.HTTPError as e:
+            print(f"Query failed with code={e.code}, reason={e.reason}")
+            answer = ""
         # answer = "Hello!"
         self.messages.append({"role": "assistant", "content": answer})
-        return answer
+
+    def askagain(self):
+        while len(self.messages) and self.messages[-1]["role"] == "assistant":
+            self.messages.pop()
+        self.ask(self.messages.pop()["content"])
 
 
 TEMPLATES = {
@@ -250,13 +263,18 @@ def main():
     while True:
         try:
             q = input(">>> ")
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             break
         q = q.strip()
         if not q:
             break
         print()
-        chatask.ask(q)
+        if q == '-r':
+            chatask.askagain()
+        elif q.startswith('-'):
+            print('Use -r to repeat your previous query')
+        else:
+            chatask.ask(q)
         print()
 
 
