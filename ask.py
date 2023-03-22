@@ -13,7 +13,7 @@ OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 
 def send_post_request(url: str, data: dict):
-    """Make a HTTP POST request to OpenAI API"""
+    """Make an HTTP POST request to OpenAI API"""
     json_data = json.dumps(data).encode("utf-8")
     req = urllib.request.Request(url, json_data)
     req.add_header("Content-Type", "application/json")
