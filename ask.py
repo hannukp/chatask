@@ -109,6 +109,7 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str, stream
         for c in receive_streaming(resp):
             print(c, end='', flush=True)
             content_buffer.write(c)
+        print()
         content = content_buffer.getvalue()
         # It seems that the streaming endpoint doesn't respond with token counts
         cost = 0
