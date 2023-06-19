@@ -212,7 +212,10 @@ def help_and_exit():
     print()
     print("Switches:")
     print("    -t0.1  -- set temperature to 0.1 (valid range 0-2)")
+    print("    -3     -- use gpt-3.5-turbo model (default)")
     print("    -4     -- use gpt-4 model")
+    print("    -i     -- generate image (must be streamed to output)")
+    print("    -v     -- verbose output")
     print()
     print("Example usage:")
     print("    ask what is the meaning of life")
@@ -241,12 +244,19 @@ def main():
     streaming = config["streaming"]
     default_temperature = True
     image = False
+    verbose = False
     for a in sys.argv[1:]:
+        if not a.startswith('-'):
+            continue
         if a.startswith('-t'):
             temperature = float(a[2:])
             default_temperature = False
+        elif a == '-3':
+            model = 'gpt-3.5-turbo'
         elif a == '-4':
             model = 'gpt-4'
+        elif a == '-v':
+            verbose = True
         elif a == '-s':
             streaming = True
         elif a == '-i':
@@ -290,6 +300,8 @@ def main():
     context = "You are a helpful assistant."
 
     chatask = ChatAsk(temperature=temperature, context=context, model=model, logfile=logfile, streaming=streaming)
+    if verbose:
+        print(f'# {temperature=}, {model=}')
     print(">>>", q)
     print('-' * 79)
     chatask.ask(q)
