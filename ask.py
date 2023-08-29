@@ -221,7 +221,7 @@ class ChatAsk:
             print("Interrupted query... You can retry with -r")
             answer = ""
         except urllib.error.HTTPError as e:
-            print(f"Query failed with code={e.code}, reason={e.reason}")
+            print(f"Query failed with code={e.code}, reason={e.reason}, body={e.read()}")
             answer = ""
         # answer = "Hello!"
         self.messages.append({"role": "assistant", "content": answer})
@@ -333,7 +333,7 @@ def main():
 
     if not q:
         help_and_exit()
-    if len(q) > 16000:
+    if len(q) > 20000:
         print(f"Too long question ({len(q)})", file=sys.stderr)
         sys.exit(1)
 
