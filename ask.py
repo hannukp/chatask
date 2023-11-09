@@ -141,8 +141,11 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str, api_ke
     return content
 
 
-def query_dall_e(prompt: str, logfile: str, api_key: str) -> bytes:
-    request_data = {"prompt": prompt, "n": 1, "size": "512x512"}
+def query_dall_e(prompt: str, logfile: str, api_key: str, dalle3=False) -> bytes:
+    if dalle3:
+        request_data = {"model": "dall-e-3", "prompt": prompt, "n": 1, "size": "1024x1024", "quality": "standard"}
+    else:
+        request_data = {"model": "dall-e-2", "prompt": prompt, "n": 1, "size": "512x512"}
     start_time = time.time()
     url = "https://api.openai.com/v1/images/generations"
     write_log(
@@ -259,7 +262,9 @@ def help_and_exit():
     print("    -t0.1  -- set temperature to 0.1 (valid range 0-2)")
     print("    -3     -- use gpt-3.5-turbo model (default)")
     print("    -4     -- use gpt-4 model")
+    print("    -4t    -- use gpt-4-turbo model")
     print("    -i     -- generate image using dall-e 2 (must be streamed to output)")
+    print("    -id3   -- generate image using dall-e 3 (must be streamed to output)")
     print("    -isd   -- generate image using stable diffusion (must be streamed to output)")
     print("    -v     -- verbose output")
     print()
@@ -304,15 +309,23 @@ def main():
             model = "gpt-3.5-turbo"
         elif a == "-4":
             model = "gpt-4"
+        elif a == "-4t":
+            model = "gpt-4-1106-preview"
         elif a == "-v":
             verbose = True
         elif a == "-s":
             streaming = True
         elif a.startswith("-i"):
-            if a[2:] == "sd":
+            key = a[2:]
+            if key == "sd":
                 image = "sd"
-            else:
+            elif key == "d3" or key == "dalle3":
+                image = "dalle3"
+            elif key == "" or key == "d2" or key == "dalle2":
                 image = "dalle"
+            else:
+                print(f"ERROR: Unknown image model {key!r}", file=sys.stderr)
+                sys.exit(1)
 
     # ignore args that look like switches
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -334,7 +347,7 @@ def main():
     if not q:
         help_and_exit()
     if len(q) > 20000:
-        print(f"Too long question ({len(q)})", file=sys.stderr)
+        print(f"ERROR: Too long question ({len(q)})", file=sys.stderr)
         sys.exit(1)
 
     if template:
@@ -342,7 +355,7 @@ def main():
 
     if image:
         if sys.stdout.isatty():
-            print("The output is an PNG file; You must pipe it to a file or another process", file=sys.stderr)
+            print("ERROR: The output is an PNG file; You must pipe it to a file or another process", file=sys.stderr)
             sys.exit(1)
 
         if image == "sd":
@@ -353,9 +366,10 @@ def main():
                 prompt=q, engine_id=engine_id, logfile=logfile, api_key=stability_api_key
             )
         else:
+            dalle3=image == "dalle3"
             if verbose:
-                print("# generating image using dall-e", file=sys.stderr)
-            image_bytes = query_dall_e(prompt=q, logfile=logfile, api_key=openai_api_key)
+                print("# generating image using", "dall-e-3" if dalle3 else "dall-e-2", file=sys.stderr)
+            image_bytes = query_dall_e(prompt=q, logfile=logfile, api_key=openai_api_key, dalle3=dalle3)
         sys.stdout.buffer.write(image_bytes)
         return
 
