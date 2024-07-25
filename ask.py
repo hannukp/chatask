@@ -25,10 +25,44 @@ def send_post_request(url: str, data: dict, api_key: str):
     return urllib.request.urlopen(req)
 
 
+def send_claude_post_request(url: str, data: dict, api_key: str):
+    """Make an HTTP POST request to OpenAI API"""
+    req = urllib.request.Request(
+        url,
+        json.dumps(data).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+            "x-api-key": api_key,
+        },
+    )
+    return urllib.request.urlopen(req)
+
+
 def receive_full_json(response):
     """Receive full response body and parse as JSON."""
     return json.loads(response.read().decode("utf-8"))
 
+
+def receive_streaming_claude(response):
+    for message in receive_streaming(response):
+        part = json.loads(message)
+        delta = part.get("delta")
+        if delta:
+            text = delta.get("text")
+            if text:
+                yield text
+
+def receive_streaming_openai(response):
+    for message in receive_streaming(response):
+        if message == b" [DONE]" or message == b"[DONE]":
+            break
+        part = json.loads(message)
+        content = part["choices"][0]["delta"].get("content")
+        if content is not None:
+            yield content
+        if part["choices"][0]["finish_reason"] == "stop":
+            break
 
 def receive_streaming(response):
     """Generator that receives server-sent events and yields contents as they arrive."""
@@ -48,18 +82,10 @@ def receive_streaming(response):
             message_stop = received.rfind(message_separator)
             messages = received[:message_stop]
             for message in messages.split(message_separator):
-                if message.startswith(b"data:"):
-                    message = message[5:].strip()
-                    if message == b" [DONE]" or message == b"[DONE]":
-                        running = False
-                        break
-                    part = json.loads(message)
-                    content = part["choices"][0]["delta"].get("content")
-                    if content is not None:
-                        yield content
-                    if part["choices"][0]["finish_reason"] == "stop":
-                        running = False
-                        break
+                data_ix = message.find(b"data:")
+                if data_ix >= 0:
+                    message = message[data_ix + 5:].strip()
+                    yield message
             # replace buffer with what was remaining of the old buffer:
             remaining = received[message_stop + 2 :]
             buffer = io.BytesIO(remaining)
@@ -114,7 +140,7 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str, api_ke
     if streaming:
         resp_data = {}
         content_buffer = io.StringIO()
-        for c in receive_streaming(resp):
+        for c in receive_streaming_openai(resp):
             print(c, end="", flush=True)
             content_buffer.write(c)
         print()
@@ -125,6 +151,57 @@ def query_chatgpt(messages, temperature: float, model: str, logfile: str, api_ke
         resp_data = receive_full_json(resp)
         cost = estimate_cost(resp_data)
         content = resp_data["choices"][0]["message"]["content"]
+
+    end_time = time.time()
+    time_taken = end_time - start_time
+    write_log(
+        logfile,
+        {
+            "time": end_time,
+            "seconds": time_taken,
+            "cost": cost,
+            "type": "response",
+            "data": resp_data,
+        },
+    )
+    return content
+
+
+def query_claude(messages, system: str, temperature: float, model: str, logfile: str, api_key: str, streaming=True):
+    request_data = {"model": model, "system": system, "messages": messages, "max_tokens": 4096, "temperature": temperature, "stream": streaming}
+    url = "https://api.anthropic.com/v1/messages"
+    start_time = time.time()
+    write_log(
+        logfile,
+        {
+            "time": start_time,
+            "type": "request",
+            "url": url,
+            "data": request_data,
+        },
+    )
+
+    resp = send_claude_post_request(
+        url,
+        request_data,
+        api_key=api_key,
+    )
+
+    if streaming:
+        resp_data = {}
+        content_buffer = io.StringIO()
+        for c in receive_streaming_claude(resp):
+            print(c, end="", flush=True)
+            content_buffer.write(c)
+        print()
+        content = content_buffer.getvalue()
+        # TODO
+        cost = 0
+    else:
+        resp_data = receive_full_json(resp)
+        cost = 0 # TODO
+        print(json.dumps(resp_data, indent=2))
+        content = resp_data["content"][0]["text"]
 
     end_time = time.time()
     time_taken = end_time - start_time
@@ -195,10 +272,10 @@ def query_stability_text_to_image(prompt: str, engine_id: str, logfile: str, api
 
 
 class ChatAsk:
-    def __init__(self, context: str, temperature: float, model: str, logfile: str, streaming: bool, api_key: str):
-        self.context = context
+    def __init__(self, system_prompt: str, temperature: float, model: str, logfile: str, streaming: bool, api_key: str):
+        self.system_prompt = system_prompt
         self.temperature = temperature
-        self.messages = [{"role": "system", "content": context}] if context else []
+        self.messages = []
         self.model = model
         self.logfile = logfile
         self.streaming = streaming
@@ -207,16 +284,27 @@ class ChatAsk:
 
     def ask(self, query: str):
         self.messages.append({"role": "user", "content": query})
-        context_messages = [{"role": "system", "content": self.context}] if self.context else []
         try:
-            answer = query_chatgpt(
-                messages=context_messages + self.messages[-self.history_length :],
-                temperature=self.temperature,
-                model=self.model,
-                logfile=self.logfile,
-                streaming=self.streaming,
-                api_key=self.api_key,
-            )
+            if self.model.startswith('claude-'):
+                answer = query_claude(
+                    messages=self.messages[-self.history_length :],
+                    system=self.system_prompt,
+                    temperature=self.temperature,
+                    model=self.model,
+                    logfile=self.logfile,
+                    streaming=self.streaming,
+                    api_key=self.api_key,
+                )
+            else:
+                context_messages = [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
+                answer = query_chatgpt(
+                    messages=context_messages + self.messages[-self.history_length :],
+                    temperature=self.temperature,
+                    model=self.model,
+                    logfile=self.logfile,
+                    streaming=self.streaming,
+                    api_key=self.api_key,
+                )
             if not self.streaming:
                 print(answer)
         except KeyboardInterrupt:
@@ -244,7 +332,7 @@ TEMPLATES = {
 configfile = os.path.expanduser("~/.ask")
 config = {
     "temperature": 0.7,
-    "model": "gpt-3.5-turbo",
+    "model": "gpt-4o",
     "streaming": True,
     "logfile": os.path.join(tempfile.gettempdir(), "ask.log"),
     "templates": {},
@@ -260,9 +348,10 @@ def help_and_exit():
     print()
     print("Switches:")
     print("    -t0.1  -- set temperature to 0.1 (valid range 0-2)")
-    print("    -3     -- use gpt-3.5-turbo model (default)")
-    print("    -4     -- use gpt-4 model")
-    print("    -4t    -- use gpt-4-turbo model")
+    print("    -ms    -- use claude-sonnet-3.5 model")
+    print("    -m4    -- use gpt-4 model")
+    print("    -m4t   -- use gpt-4 turbo model")
+    print("    -m4o   -- use gpt-4o model (default)")
     print("    -i     -- generate image using dall-e 2 (must be streamed to output)")
     print("    -id3   -- generate image using dall-e 3 (must be streamed to output)")
     print("    -isd   -- generate image using stable diffusion (must be streamed to output)")
@@ -270,7 +359,7 @@ def help_and_exit():
     print()
     print("Example usage:")
     print("    ask what is the meaning of life")
-    print("    ask -4 what is the meaning of life")
+    print("    ask -m4 what is the meaning of life")
     print("    ask test 'const adder = (a: number, b: number) => a + b'")
     print("    ask explaincode 'const adder = (a: number, b: number) => a + b'")
     print("    ask test <example.py")
@@ -295,6 +384,7 @@ def main():
     logfile = config["logfile"]
     streaming = config["streaming"]
     openai_api_key = os.environ.get("OPENAI_API_KEY", config.get("OPENAI_API_KEY"))
+    antrophic_api_key = os.environ.get("ANTHROPIC_API_KEY", config.get("ANTHROPIC_API_KEY"))
     stability_api_key = os.environ.get("STABILITY_API_KEY", config.get("STABILITY_API_KEY"))
     default_temperature = True
     image = None
@@ -305,12 +395,21 @@ def main():
         if a.startswith("-t"):
             temperature = float(a[2:])
             default_temperature = False
-        elif a == "-3":
-            model = "gpt-3.5-turbo"
-        elif a == "-4":
-            model = "gpt-4"
-        elif a == "-4t":
-            model = "gpt-4-1106-preview"
+        elif a.startswith('-m'):
+            model_short = a[2:]
+            if model_short == "s":
+                model = "claude-3-5-sonnet-20240620"
+            elif model_short == "4":
+                model = "gpt-4"
+            elif model_short == "4t":
+                model = "gpt-4-1106-preview"
+            elif model_short == "4o":
+                model = "gpt-4o"
+            elif model_short == "4om":
+                model = "gpt-4o-mini"
+            else:
+                print(f"ERROR: Unknown chat model {model_short!r}", file=sys.stderr)
+                sys.exit(1)
         elif a == "-v":
             verbose = True
         elif a == "-s":
@@ -373,16 +472,16 @@ def main():
         sys.stdout.buffer.write(image_bytes)
         return
 
-    # This context seems to help with answers that start with 'As an AI language model...':
-    context = "You are a helpful assistant."
+    # This system prompt seems to help with answers that start with 'As an AI language model...':
+    system_prompt = "You are a helpful assistant."
 
     chatask = ChatAsk(
         temperature=temperature,
-        context=context,
+        system_prompt=system_prompt,
         model=model,
         logfile=logfile,
         streaming=streaming,
-        api_key=openai_api_key,
+        api_key=antrophic_api_key if model.startswith('claude-') else openai_api_key,
     )
     if verbose:
         print(f"# {temperature=}, {model=}", file=sys.stderr)
