@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# importing readline enables nicer input()
+import readline
 import base64
 import io
 import json
