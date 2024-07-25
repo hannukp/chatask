@@ -1,20 +1,31 @@
 # ChatAsk
 
-Query ChatGPT from command line. Implemented in Python, using only standard libraries.
+Query ChatGPT or Claude (Sonnet) from command line. Implemented in Python, using only standard libraries.
 
-First get your own API key from https://platform.openai.com/
+First get your own API key from https://platform.openai.com/ or https://www.anthropic.com/api
 
-"Installation":
+## Installation
 
-    alias ask="OPENAI_API_KEY=*key* $(pwd)/ask.py"
+Create file called ~/.ask for the settings:
 
-Usage:
+    {
+        "OPENAI_API_KEY": "sk-xxx",
+        "STABILITY_API_KEY": "sk-xxx",
+        "ANTHROPIC_API_KEY": "sk-xxx",
+        "model": "gpt-4o"
+    }
+
+Create an alias that points to the main python file:
+
+    alias ask="$(pwd)/ask.py"
+
+## Usage
 
     # let's start with an easy task
     ask what is the meaning of life
     
     # maybe gpt-4 knows?
-    ask -4 what is the meaning of life
+    ask -m4 what is the meaning of life
     
     # write unit tests for code
     ask test 'const adder = (a: number, b: number) => a + b'
