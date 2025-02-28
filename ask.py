@@ -391,6 +391,8 @@ def main():
     default_temperature = True
     image = None
     verbose = False
+    # This system prompt seems to help with answers that start with 'As an AI language model...':
+    system_prompt = "You are a helpful assistant."
     for a in sys.argv[1:]:
         if not a.startswith("-"):
             continue
@@ -416,6 +418,8 @@ def main():
             verbose = True
         elif a == "-s":
             streaming = True
+        elif a.startswith("-S"):
+            system_prompt = a[2:]
         elif a.startswith("-i"):
             key = a[2:]
             if key == "sd":
@@ -473,9 +477,6 @@ def main():
             image_bytes = query_dall_e(prompt=q, logfile=logfile, api_key=openai_api_key, dalle3=dalle3)
         sys.stdout.buffer.write(image_bytes)
         return
-
-    # This system prompt seems to help with answers that start with 'As an AI language model...':
-    system_prompt = "You are a helpful assistant."
 
     chatask = ChatAsk(
         temperature=temperature,
