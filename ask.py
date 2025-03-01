@@ -350,7 +350,7 @@ def help_and_exit():
     print()
     print("Switches:")
     print("    -t0.1  -- set temperature to 0.1 (valid range 0-2)")
-    print("    -ms    -- use claude-sonnet-3.5 model")
+    print("    -ms    -- use claude-3-7-sonnet-latest model")
     print("    -m4    -- use gpt-4 model")
     print("    -m4t   -- use gpt-4 turbo model")
     print("    -m4o   -- use gpt-4o model (default)")
@@ -402,7 +402,7 @@ def main():
         elif a.startswith('-m'):
             model_short = a[2:]
             if model_short == "s":
-                model = "claude-3-5-sonnet-20240620"
+                model = "claude-3-7-sonnet-latest"
             elif model_short == "4":
                 model = "gpt-4"
             elif model_short == "4t":
