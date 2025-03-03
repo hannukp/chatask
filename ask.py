@@ -352,7 +352,7 @@ def help_and_exit():
     print("    -t0.1  -- set temperature to 0.1 (valid range 0-2)")
     print("    -ms    -- use claude-3-7-sonnet-latest model")
     print("    -m4    -- use gpt-4 model")
-    print("    -m4t   -- use gpt-4 turbo model")
+    print("    -m4.5  -- use gpt-4.5 model")
     print("    -m4o   -- use gpt-4o model (default)")
     print("    -i     -- generate image using dall-e 2 (must be streamed to output)")
     print("    -id3   -- generate image using dall-e 3 (must be streamed to output)")
@@ -405,8 +405,8 @@ def main():
                 model = "claude-3-7-sonnet-latest"
             elif model_short == "4":
                 model = "gpt-4"
-            elif model_short == "4t":
-                model = "gpt-4-1106-preview"
+            elif model_short == "4.5":
+                model = "gpt-4.5-preview"
             elif model_short == "4o":
                 model = "gpt-4o"
             elif model_short == "4om":
